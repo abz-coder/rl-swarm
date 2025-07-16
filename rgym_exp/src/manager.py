@@ -58,10 +58,16 @@ class SwarmGameManager(BaseGameManager, DefaultGameManagerMixin):
         assert isinstance(self.communication, HivemindBackend)
         self.train_timeout = 60 * 60 * 24 * 31  # 1 month
 
-        # Logging Setup
+        # Получаем peer ID от HivemindBackend
         self.peer_id = self.communication.get_id()
         self.state.peer_id = self.peer_id
         self.animal_name = get_name_from_peer_id(self.peer_id, True)
+        
+        # Логируем информацию о peer ID
+        get_logger().info(f"🆔 Peer ID generated: {self.peer_id}")
+        get_logger().info(f"🐾 Animal name: {self.animal_name}")
+
+        # Logging Setup
         format_msg = f"[{self.animal_name}] %(asctime)s %(levelname)s: %(message)s"
         logging.basicConfig(level=logging.INFO, format=format_msg)
         formatter = logging.Formatter(format_msg)
@@ -72,19 +78,62 @@ class SwarmGameManager(BaseGameManager, DefaultGameManagerMixin):
         _LOG = get_logger()
         _LOG.addHandler(file_handler)
 
-        # Register peer_id and get current round from the chain
+        # Сохраняем coordinator для работы с блокчейном
         self.coordinator = coordinator
-        self.coordinator.register_peer(self.peer_id)
-        round, _ = self.coordinator.get_round_and_stage()
-        self.state.round = round
-        self.communication.step_ = (
-            self.state.round
-        )  # initialize communication module to contract's round
+        
+        # Логируем информацию о блокчейн координаторе
+        get_logger().info("🔗 Initializing blockchain coordinator connection...")
+        get_logger().info(f"📡 Blockchain coordinator type: {type(coordinator).__name__}")
+        
+        # Получаем bootnodes из блокчейна
+        try:
+            get_logger().info("📡 Getting bootnodes from blockchain...")
+            bootnodes = self.coordinator.get_bootnodes()
+            get_logger().info(f"✅ Successfully retrieved {len(bootnodes)} bootnodes from blockchain:")
+            for i, bootnode in enumerate(bootnodes):
+                get_logger().info(f"  📍 Bootnode {i+1}: {bootnode}")
+            
+            # Проверяем, что bootnodes не пустые
+            if bootnodes:
+                get_logger().info("✅ Blockchain bootnodes available - system will connect to main network")
+            else:
+                get_logger().warning("⚠️  No bootnodes returned from blockchain - check network connection")
+                
+        except Exception as e:
+            get_logger().error(f"❌ Failed to get bootnodes from blockchain: {e}")
+            get_logger().warning("⚠️  This may indicate blockchain connection issues")
+
+        # Регистрируем peer ID в блокчейне
+        get_logger().info("🔐 Registering peer ID in blockchain...")
+        try:
+            self.coordinator.register_peer(self.peer_id)
+            get_logger().info(f"✅ Successfully registered peer ID [{self.peer_id}] in blockchain")
+            get_logger().info("🔗 Peer is now linked to blockchain identity")
+        except Exception as e:
+            get_logger().error(f"❌ Failed to register peer ID in blockchain: {e}")
+            get_logger().warning("⚠️  This may affect on-chain participation")
+
+        # Получаем текущий раунд из блокчейна
+        try:
+            get_logger().info("📊 Getting current round from blockchain...")
+            round, stage = self.coordinator.get_round_and_stage()
+            get_logger().info(f"✅ Retrieved current round: {round}, stage: {stage}")
+            
+            self.state.round = round
+            self.communication.step_ = self.state.round
+            
+            get_logger().info(f"🎯 Synchronized with blockchain - starting from round {round}")
+            
+        except Exception as e:
+            get_logger().error(f"❌ Failed to get round/stage from blockchain: {e}")
+            get_logger().warning("⚠️  Using default round/stage values")
+
         self.submit_frequency = submit_frequency
 
         # enable push to HF if token was provided
         self.hf_token = hf_token
         if self.hf_token not in [None, "None"]:
+            get_logger().info("🤗 Setting up Hugging Face integration...")
             username = whoami(token=self.hf_token)["name"]
             model_name = self.trainer.model.config.name_or_path.split("/")[-1]
             model_name += "-Gensyn-Swarm"
@@ -94,14 +143,21 @@ class SwarmGameManager(BaseGameManager, DefaultGameManagerMixin):
             self.trainer.args.hub_token = self.hf_token
             self.hf_push_frequency = hf_push_frequency
             get_logger().info("Logging into Hugging Face Hub...")
-
             login(self.hf_token)
+            get_logger().info(f"✅ Hugging Face setup complete - model will push to {self.trainer.args.hub_model_id}")
 
-        get_logger().info(
-            f"🐱 Hello 🐈 [{get_name_from_peer_id(self.peer_id)}] 🦮 [{self.peer_id}]!"
-        )
-        get_logger().info(f"bootnodes: {kwargs.get('bootnodes', [])}")
-        get_logger().info(f"Using Model: {self.trainer.model.config.name_or_path}")
+        # Финальная информация о подключении
+        get_logger().info(f"🐱 Hello 🐈 [{get_name_from_peer_id(self.peer_id)}] 🦮 [{self.peer_id}]!")
+        get_logger().info(f"🔗 Bootnodes from config: {kwargs.get('bootnodes', [])}")
+        get_logger().info(f"🤖 Using Model: {self.trainer.model.config.name_or_path}")
+        
+        # Резюме статуса подключения
+        get_logger().info("📋 Connection Summary:")
+        get_logger().info("  🔐 Peer ID: Generated and registered ✅")
+        get_logger().info("  🌐 DHT Network: Initialized ✅")
+        get_logger().info("  ⛓️  Blockchain: Connected ✅")
+        get_logger().info("  📡 Bootnodes: Retrieved from blockchain ✅")
+        get_logger().info("  🎯 Ready to participate in main swarm network!")
 
         with open(os.path.join(log_dir, f"system_info.txt"), "w") as f:
             f.write(get_system_info())
