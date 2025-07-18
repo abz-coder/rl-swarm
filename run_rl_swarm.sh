@@ -280,10 +280,11 @@ fi
 
 USE_CPU=${USE_CPU:-""}
 
-if [ "$USE_CPU" = "true" ]; then
-    echo_green ">> USE_CPU=true detected. Adjusting config for CPU mode..."
-    sed -i -E 's/fp16: false/fp16: true/; s/num_train_samples: 2/num_train_samples: 1/' /root/rl-swarm/rgym_exp/config/rg-swarm.yaml
+if [[ "$USE_CPU" =~ ^(CPU|cpu|true|1)$ ]]; then
+    echo_green ">> USE_CPU=$USE_CPU detected. Adjusting config for CPU mode..."
+    sed -i -E 's/fp16: false/fp16: true/; s/num_train_samples: 2/num_train_samples: 1/' "$ROOT/rgym_exp/config/rg-swarm.yaml"
 fi
+
 
 echo_green ">> Good luck in the swarm!"
 echo_blue ">> And remember to star the repo on GitHub! --> https://github.com/gensyn-ai/rl-swarm"
